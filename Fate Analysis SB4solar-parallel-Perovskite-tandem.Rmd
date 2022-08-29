@@ -1,0 +1,248 @@
+---
+title: "Calculating Probabilistic Dynamic Exposure Concentrations"
+author: "Joris T.K. Quik and Carlos Blanco"
+date: "20/10/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+ptm <- proc.time()
+```
+
+## Introduction
+
+This document describes the code and functions to produce quasi-dynamic ('levelIV') solutions of the [SimpleBox](https://www.rivm.nl/simplebox) multimedia fate model in comvbination with dynamic emission rates.
+
+This script uses a adaptation of SimpleBox v4 to which a local scale with air, water, sediment and soil compartments. The SimnpleBox model is run probabilistically seperately to produce a series of K matrices which are dynamically analysed using this script in combination with probabilistic dynamic emission data.
+
+```{r requirements}
+library(openxlsx)
+library(deSolve)
+library(ggplot2)
+library(reshape2)
+library(devtools)
+library(foreach)
+library(doParallel)
+# adjust to correct location of SimpleBox xls file
+# sb4n.loc <- paste("data/SimpleBox4.0_web_PBT1.xlsm",sep="")
+
+#For installing correct version of openxlsx:
+#install_version("openxlsx", version = "4.2.3", repos = "https://cran.us.r-project.org")
+
+```
+
+
+## required functions
+```{r}
+
+
+# ODE function of SimpleBox:
+
+SimpleBoxODE <- function(t, m, parms) {
+  
+  with(as.list(c(parms, m)), {
+    e <- c(rep(0,length(SB.names)))
+    
+    e[grep("aL",SB.names)] <- ef.a_L(t)  
+    e[grep("wL",SB.names)] <- ef.fw_L(t)  
+    e[grep("sL",SB.names)] <- ef.s_L(t)
+    
+    e[grep("aR",SB.names)] <- ef.a_R(t)  
+    e[grep("w1R",SB.names)] <- ef.fw_R(t)  
+    e[grep("s2R",SB.names)] <- ef.s_R(t)  # soil emission goes to agricultural soil
+    
+    e[grep("aC",SB.names)] <- ef.a_C(t)  
+    e[grep("w1C",SB.names)] <- ef.fw_C(t)  
+    e[grep("s2C",SB.names)] <- ef.s_C(t)  # soil emission goes to agricultural soil
+    
+    dm <- K %*% m + e
+    res <- c(dm)
+    list(res, signal = e)
+    
+  })
+}
+
+```
+
+
+## Probabilistic Dynamic analysis
+### inputs
+
+```{r inputs}
+# base SimpleBox file
+# sb4n.loc <- "data/SimpleBox4DIRECT 07102021.xlsm"
+sb4n.loc <- "data/@RISK_SimpleBox4DIRECT 28012022.xlsm"
+
+# SB.K <- as.matrix(read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="K")) # matrix of rate constants "k"
+#SB.m0 <- read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="m0") # Initial mass of each compartment
+SB.names <- read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="box_names") #Names for each compartment
+# SB.v <- read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="v") #Volumes
+
+# start with 0 mass of substance x
+SB.m0 <- rep(0,length(SB.names)) # Initial mass of each compartment in kg
+
+# Read in and prepare emission data per compartment and scale
+Analysis_name <- "v0.9"
+# Scenario_name <- "III-V_Si_As_NoR"
+
+detectCores()
+ncores <- 12 #take care not to set to more than amount of cores available.
+
+# read in emission data
+
+cases <- expand.grid(Recycling=c("NR", "R"),substance=c("Ag","Cu", "Pb"),paneltype=c("Tandem"))
+cases$casename <- paste(cases$substance,cases$Recycling,cases$paneltype,sep="_")
+```
+
+### main dynamic calculations
+```{r main dyn calculation}
+
+out.data2 <- as.list(NULL)
+
+for(i in 1:length(cases[,1])){
+  
+  ################################################
+  # prepare emission data for emission functions #
+  
+  Emis.Loc <- paste0("data/Emis PV data tandem perovskite/PV_emissions_",cases$paneltype[i],"_v0.1_LOC_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
+  Emis.Reg <- paste0("data/Emis PV data tandem perovskite/PV_emissions_",cases$paneltype[i],"_v0.1_AM_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
+  Emis.Cont <-paste0("data/Emis PV data tandem perovskite/PV_emissions_",cases$paneltype[i],"_v0.1_EU_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
+  
+  
+  prep.emis.v1 <- function(emis.data){ # input is format of xls emission data
+    emis.data[,1] <- paste0(emis.data[,1], Analysis_name)
+    row.names(emis.data) <- emis.data[,1]
+    emis.data[,1 ] <- 0
+    colnames(emis.data)[1] <- 0
+    emis.data <- emis.data/(365.25*24*3600)
+    emis.data # output is formatted emission data for aproxfun + desolve
+  }
+  
+  # emission rate is read in and organised
+  Emis_a_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_a")) 
+  Emis_fw_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_tw"))
+  Emis_s_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_s")) 
+  
+  Emis_a_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_a")) 
+  Emis_fw_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_tw"))
+  Emis_s_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_s")) 
+  
+  Emis_a_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_a"))
+  Emis_fw_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_tw"))
+  Emis_s_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_s"))
+  
+  # Function for converting emission data to linear interpolation functions for Solver
+  f.emisfun <- function(Y){
+    f.emisfun.a <- function(X){
+      approxfun(data.frame(year = as.numeric(names(X))*(60*60*24*365.25),
+                           emis_kg = as.numeric(X)),rule = 1:2)
+    }
+    Y.list <- setNames(split(Y,                 # Modify names of list elements
+                             seq(nrow(Y))),
+                       rownames(Y))
+    emisfun.Y <- lapply(Y.list,f.emisfun.a)
+    emisfun.Y
+  }
+  
+  # creates a list of emission data:
+  Emisdata <- list( Emis_a_L=Emis_a_L,
+                    Emis_fw_L=Emis_fw_L,
+                    Emis_s_L=Emis_s_L,
+                    Emis_a_R=Emis_a_R,
+                    Emis_fw_R=Emis_fw_R,
+                    Emis_s_R=Emis_s_R,
+                    Emis_a_C=Emis_a_C,
+                    Emis_fw_C=Emis_fw_C,
+                    Emis_s_C=Emis_s_C)
+  Emisfunctions <- lapply(Emisdata,f.emisfun) # converts elements in list to emission functions
+  
+  ####################################
+  # Define Location of K mastrices   #
+  
+  ADDRISKdata <- paste0("data/SBMatrix C-si/",cases$substance[i],"_SB4DIRECT @RISK output to K-matrix_27012022.xlsx")
+  
+  ####################################
+  # start of parallel computing      #
+  registerDoParallel(ncores)  # use multicore, set to the number of our cores
+  
+  out.data <- 
+    foreach(k=c(1:1000), .inorder=FALSE, .errorhandling = "pass") %dopar%  {
+      
+      Run <- paste0(k, Analysis_name)
+      
+      ## for reading in K matrices (SB.K) ##
+      n <- 0:(999)
+      matrixK.rijstart = 2
+      matrixK.rij <- matrixK.rijstart+n*39
+      matrixK.kollom <- 3  
+      
+      SB.K = as.matrix(read.xlsx(ADDRISKdata,
+                                 colNames=TRUE, 
+                                 sheet="Matrixes",
+                                 rows = c(matrixK.rij[k]:(matrixK.rij[k]+37)),
+                                 cols = c(matrixK.kollom:(matrixK.kollom+37))) )
+      
+      parms <- list(K=as.matrix(SB.K),SB.names,Run,
+                    ef.a_L=Emisfunctions[["Emis_a_L"]][[Run]],
+                    ef.fw_L=Emisfunctions[["Emis_fw_L"]][[Run]],
+                    ef.s_L=Emisfunctions[["Emis_s_L"]][[Run]],
+                    ef.a_R=Emisfunctions[["Emis_a_R"]][[Run]],
+                    ef.fw_R=Emisfunctions[["Emis_fw_R"]][[Run]],
+                    ef.s_R=Emisfunctions[["Emis_s_R"]][[Run]],
+                    ef.a_C=Emisfunctions[["Emis_a_C"]][[Run]],
+                    ef.fw_C=Emisfunctions[["Emis_fw_C"]][[Run]],
+                    ef.s_C=Emisfunctions[["Emis_s_C"]][[Run]])
+      
+      etimes <- c(0:100)*(60*60*24*365.25) # manually set output times
+      out <- ode(y=as.numeric(SB.m0),times=c(etimes),func=SimpleBoxODE,parms,rtol=1e-30,atol=1e-7)
+      colnames(out)[2:38] <- SB.names
+      
+      list(SBout_kg=out,Run=Run)
+      # output to out.data list
+      
+      # list of all the runs. Each out object contains time step, the mass in each compartment (kg) and a set of signals, which are the emission rates for each compartment.
+      
+      
+    }
+  stopImplicitCluster()
+  out.data2[[cases$casename[i]]] <- out.data
+  addriskinputs <- read.xlsx(ADDRISKdata,
+                             colNames=TRUE,
+                             rowNames = FALSE,
+                             sheet="Raw data output",
+                             rows = c(2:1005),
+                             cols = c( 1369:1526)) 
+  out.data2[[cases$casename[i]]]$addriskinput <- addriskinputs
+  
+}
+
+
+
+
+# head(out.data2)
+
+# save data for use in R later
+save(out.data2, file=paste0("data/20220317RprobDynSB4_perov_tandem.RData"))
+
+# Stop the clock
+runtime <- proc.time() - ptm
+print(paste(round(runtime[["elapsed"]]/(60),0),"minutes runtime"))
+
+
+# for testing
+# plot(out)
+#head(out.data2)
+#str(out.data2)
+# str(out.data2$Ga_R[[1]]$SBout_kg)
+# 
+# plot(out.data2[[1]][[1]]$SBout_kg)
+
+# out.data2$Ga_R[[1]]$SBout_kg
+# without running all, read in output:
+
+```
+

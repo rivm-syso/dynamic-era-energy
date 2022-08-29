@@ -1,0 +1,828 @@
+---
+title: "Figures and output for Probabilistic Dynamic Exposure Concentrations"
+author: "Joris T.K. Quik and Carlos Blanco"
+date: "14/03/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## output figures
+### Emissions figure
+
+```{r}
+# input data
+load("data/20220627RprobDynSB4_perov_tandem.RData")
+
+# required packages
+library(tidyr)
+library(openxlsx)
+library(ggplot2)
+library(dplyr)
+library(psych)
+library(RColorBrewer)
+
+# relevant functions
+
+f_Soil.wetweight <- function(Conc.soil, # in kg/m3 soil or sediment
+                             Fracw,
+                             Fraca,
+                             RHOsolid){
+  Conc.soil*1000/(Fracw*1000+(1-Fracw-Fraca)*RHOsolid) # in g/kg (wet) soil
+  
+}
+
+f_Soil.dryweight <- function(Conc.soil, # in kg/m3 soil
+                             Fracs,
+                             RHOsolid){
+  Conc.soil*1000/(Fracs*RHOsolid) # in g/kg (dry) soil
+}
+
+f_wet2dryweight <- function(Conc.soil, # in g/kg (wet) soil/sediment
+                            Fracs,
+                            RHOsolid,
+                            Fracw,
+                            RHOw){
+  Conc.soil*(Fracw*RHOw/(Fracs*RHOsolid)+1) # in g/kg (dry) soil
+}
+
+cases <- expand.grid(Recycling=c("NR", "R"),substance=c("Ag","Cu", "Pb"),paneltype=c("Tandem"))
+cases$casename <- paste(cases$substance,cases$Recycling,cases$paneltype,sep="_")
+SB.scales <- c("LOC", "AM", "EU")
+Substances <- as.character(unique(cases$substance))
+
+```
+
+
+```{r figure 4}
+
+#initialize variables
+
+emis.scens <- expand.grid("Scales"=SB.scales,"Substances"=Substances)
+Emis_routes <- c("USE_s2", "USE_w0", "USE_w1", "EOL_a_NR", "EOL_a_R", "EOL_s2_NR","EOL_s2_R")
+
+emis.stat.long3 <- data.frame()
+
+## Makes a matrix with concentrations (year x MC run) from deSolve lists, for each compartment and scenario
+
+for(s in 1:length(emis.scens[,1])){
+  Emis.loc_NR <- paste0("data/Emis PV data tandem perovskite/PV_emissions_Tandem_v0.1_",
+                        emis.scens$Scales[s],"_NR_",
+                        emis.scens$Substances[s],"_kg.xlsm") 
+  Emis.loc_R <- paste0("data/Emis PV data tandem perovskite/PV_emissions_Tandem_v0.1_",
+                       emis.scens$Scales[s],"_R_",
+                       emis.scens$Substances[s],"_kg.xlsm") 
+  
+  emis.stat.long2 <- data.frame()
+  for(em in Emis_routes){    
+    if(em=="USE_s2"){
+      Emis_data1 <- read.xlsx(Emis.loc_NR,
+                              sheet = "PROB_Y_s (USE)",
+                              colNames=TRUE)[,-1]
+    }else if(em=="USE_w0"){
+      Emis_data1 <- read.xlsx(Emis.loc_NR,
+                              sheet = "PROB_Y_lw",
+                              colNames=TRUE)[,-1]
+    }else if(em=="USE_w1"){
+      Emis_data1 <- read.xlsx(Emis.loc_NR,
+                              sheet = "PROB_Y_fw",
+                              colNames=TRUE)[,-1]
+    }else if(em=="EOL_a_NR"){
+      Emis_data1 <- read.xlsx(Emis.loc_NR,
+                              sheet = "PROB_Y_a",
+                              colNames=TRUE)[,-1]
+    }else if(em=="EOL_a_R"){
+      Emis_data1 <- read.xlsx(Emis.loc_R,
+                              sheet = "PROB_Y_a",
+                              colNames=TRUE)[,-1]
+    }else if(em=="EOL_s2_NR"){
+      Emis_data1 <- read.xlsx(Emis.loc_NR,
+                              sheet = "PROB_Y_s (EOL)",
+                              colNames=TRUE)[,-1]
+    }else if(em=="EOL_s2_R"){
+      Emis_data1 <- read.xlsx(Emis.loc_R,
+                              sheet = "PROB_Y_s (EOL)",
+                              colNames=TRUE)[,-1]
+    }else Emis_data1 <- NA
+    
+    emm.mat.yr.df <- as.data.frame(Emis_data1) 
+    # str(emm.mat.yr.df)
+    # str(Emis_data1)
+    
+    ## Reshapes dataframe and puts it in long form
+    data.long <- as.data.frame(emm.mat.yr.df) %>% gather(year, emmision, 1:100) 
+    # str(data.long)
+    data.long$year <- as.integer(as.character(data.long$year))
+    
+    #gets summary statistics for each year
+    sum.stat <- data.long %>%   
+      group_by(year) %>% 
+      summarize(geo.mean = geometric.mean(emmision), P25 = quantile(emmision, 0.25,na.rm = TRUE), P75 = quantile(emmision, 0.75,na.rm = TRUE))
+    
+    sum.stat.long <- as.data.frame(sum.stat) %>% pivot_longer(c("P75","geo.mean", "P25"), names_to = "sum_stat", values_to = "emmision")
+    sum.stat.long$scale = (emis.scens$Scales[s])
+    sum.stat.long$substance = (emis.scens$Substance[s])
+    sum.stat.long$emission_rout = as.factor(em)
+    # str(sum.stat.long)
+    
+    #stores values for this cycle (compartment x scenario)
+    emis.stat.long2 <- rbind(emis.stat.long2, sum.stat.long)
+  }
+  # str(emis.stat.long2)
+  emis.stat.long3 <- rbind(emis.stat.long3, emis.stat.long2)
+}
+
+emis.stat.long3$scenario <- paste0(emis.stat.long3$scale,"_",emis.stat.long3$substance)
+##Plot
+
+str(emis.stat.long3)
+unique(emis.stat.long3$scale)
+
+
+p <- ggplot(subset(emis.stat.long3, sum_stat %in% "geo.mean"), aes(x=year, y=emmision)) +
+  ylab('Emission (kg)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(emis.stat.long3, sum_stat %in% "P25")$emmision, 
+                  ymax = subset(emis.stat.long3, sum_stat %in% "P75")$emmision),
+              fill = brewer.pal(7,"Blues")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Blues")[7])
+
+
+p1 <- p + facet_grid(vars(scenario), vars(emission_rout), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("emission_",cases$paneltype[1],"_v03.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+p1 <- p + facet_grid(vars(scenario), vars(emission_rout), scales = "free") +scale_y_continuous(trans='log10')+ theme_bw()
+
+ggsave(filename = paste0("emission_LOG_",cases$paneltype[1],"_v03.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+
+LOC_As <- emis.stat.long3[emis.stat.long3$scale=="LOC",]
+LOC_As$use_eol <- as.character(LOC_As$emission_rout)
+
+LOC_As$use_eol <- sub("_s2", "",LOC_As$use_eol)
+LOC_As$use_eol <- sub("_w0", "",LOC_As$use_eol)
+LOC_As$use_eol <- sub("_w1", "",LOC_As$use_eol)
+LOC_As$use_eol <- sub("_a", "",LOC_As$use_eol)
+# LOC_As$use_eol <- substr(as.character(LOC_As$emission_rout),1,3)
+
+LOC_As2 <- LOC_As %>%
+  group_by(year,sum_stat,scale,substance,scenario,use_eol) %>%
+  summarise(emmision = sum(emmision))
+
+# str(LOC_As2)
+
+p <- ggplot(subset(LOC_As2, sum_stat %in% "geo.mean"), aes(x=year, y=emmision)) +
+  ylab('Emission (kg)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(LOC_As2, sum_stat %in% "P25")$emmision, 
+                  ymax = subset(LOC_As2, sum_stat %in% "P75")$emmision),
+              fill = brewer.pal(7,"Blues")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Blues")[7])
+
+
+p1 <- p + facet_grid(vars(scenario), vars(use_eol), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("emission_LOCAL_useeol",cases$paneltype[1],"_v03.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 1.5,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+p1 <- p + facet_grid(vars(scenario), vars(use_eol), scales = "free")+scale_y_continuous(trans='log10')+ theme_bw()
+
+ggsave(filename = paste0("emission_LOCAL_useeol_LOG_",cases$paneltype[1],"_v03.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 1.5,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+LOC_As3 <- LOC_As2[LOC_As2$substance=="Pb",]
+p <- ggplot(subset(LOC_As3, sum_stat %in% "geo.mean"), aes(x=year, y=emmision)) +
+  ylab('Emission (kg)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(LOC_As3, sum_stat %in% "P25")$emmision, 
+                  ymax = subset(LOC_As3, sum_stat %in% "P75")$emmision),
+              fill = brewer.pal(7,"Blues")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Blues")[7])
+
+
+p1 <- p + facet_grid(vars(scenario), vars(use_eol), scales = "free")+ theme_bw() +scale_y_continuous(trans='log10')
+
+ggsave(filename = paste0("emission_LOCAL_useeol_Pb_LOG_",cases$paneltype[1],"_v03.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 1.5,
+       width = 16,
+       height = 7,
+       units = "cm",
+       dpi = 300)
+
+LOC_Pb_NR <- LOC_As2[LOC_As2$substance=="Pb"&LOC_As2$use_eol =="EOL_NR",]
+p <- ggplot(subset(LOC_Pb_NR, sum_stat %in% "geo.mean"), aes(x=year, y=emmision)) +
+  ylab('Emission (kg)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(LOC_Pb_NR, sum_stat %in% "P25")$emmision, 
+                  ymax = subset(LOC_Pb_NR, sum_stat %in% "P75")$emmision),
+              fill = brewer.pal(7,"Blues")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Blues")[7])
+
+p1 <- p +  theme_bw() #+scale_y_continuous(trans='log10')
+
+ggsave(filename = paste0("emission_LOCAL_useeol_Pb_NR_",cases$paneltype[1],"_v01.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 1,
+       width = 10,
+       height = 5.5,
+       units = "cm",
+       dpi = 300)
+
+#Factsheet figure 3. 
+ggsave(filename = paste0("emission_LOCAL_useeol_Pb_NR_",cases$paneltype[1],"_v01.svg"),
+       plot = p1,
+       device = "svg",
+       path = "figures",
+       scale = 1,
+       width = 10,
+       height = 5.5,
+       units = "cm",
+       dpi = 300)
+
+```
+
+
+### PEC figure
+
+```{r Figure 5} 
+
+# sb4n.loc <- "data/SimpleBox4DIRECT 07102021.xlsm"
+
+#Get compartment volumes from @RISK input data
+v_wL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.wL`[4:1003])
+v_w1R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.w1R`[4:1003])
+v_w1C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.w1C`[4:1003])
+v_sL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.sL`[4:1003])
+v_s2R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.s2R`[4:1003])
+v_s2C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.s2C`[4:1003])
+vols <- data.frame(v_wL, v_w1R, v_w1C,v_sL, v_s2R, v_s2C)
+
+fracw_sL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.sL`[4:1003])
+fracw_s2R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.s2R`[4:1003])
+fracw_s2C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.s2C`[4:1003])
+RHOSOLID <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`RHOsolid`[4:1003])
+# fraca_sL <- as.double(read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="FRACa.sL") )
+# fraca_s2R <- as.double(read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="FRACa.s2R"))
+# fraca_s2C <- as.double( read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="FRACa.s2C"))
+fracw_sdL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.sdL`[4:1003])
+fracw_sd1R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.sd1R`[4:1003])
+fracw_sd1C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`FRACw.sd1C`[4:1003])
+
+FRACWs <- data.frame(fracw_sL, fracw_s2R, fracw_s2C)
+# FRACAs <- data.frame(fraca_sL, fraca_s2R, fraca_s2C)
+
+#initialize variables
+sum.stat.long2 <- data.frame()
+comp <- c("wL", "w1R", "w1C", "sL", "s2R", "s2C")
+scen <- names(out.data2)
+
+# for testing
+c = "wL"
+s = scen[2]
+
+## Makes a matrix with concentrations (year x MC run) from deSolve lists, for each compartment and scenario
+for(c in comp)
+  for(s in scen){
+    cv <- vols %>% select(matches(c))
+    mat.yr <- matrix(nrow=101, ncol=1000)
+    
+    #new code to fill matrix, as previous one would not report on errors with DeSolve output... and skipped columns wihout valid data without warning, e.g. run 4 here.
+    for(r in 1:1000) {
+      
+      
+      #converts concentrations to ug/L for water and mg/kg for soil compartments
+      if (c %in% c("wL", "w1R", "w1C")){
+        try(mat.yr[,r] <- (out.data2[[s]][[r]][["SBout_kg"]][,c]/cv[r,1])*1e9/1000  ,silent = TRUE ) #divides mass by compartment volume in m3 and convert to ug/L
+      } else {
+        fracw <- FRACWs %>% select(matches(c))
+        # fraca <- FRACAs %>% select(matches(c))
+        try(mat.yr[,r] <- (f_Soil.dryweight(Conc.soil = c(out.data2[[s]][[r]][["SBout_kg"]][,c]/cv[r,1])*1e3, #*1e3 to convert from g to mg/kg dry weight, same unit as PNEC
+                                            Fracs = c(1-fracw[r,1]-0.2), 
+                                            RHOsolid = RHOSOLID[r] ) ) ,silent = TRUE)
+        
+      }
+      
+    }
+    if(length(which(is.na(mat.yr),arr.ind = TRUE)[,2])>0){print("NA's found, please check, a Desolve SB run could have failed or a timestep failed")
+      # which(is.na(mat.yr))
+      which(is.na(mat.yr),arr.ind = TRUE)
+      print(paste0("NA's found in Runs: " ))
+      print(unique(which(is.na(mat.yr),arr.ind = TRUE)[,2]))
+    }
+    
+    mat.yr.df <- as.data.frame(mat.yr) 
+    # mat.yr.df <- mat.yr.df[-1]
+    
+    ## Reshapes dataframe and puts it in long form
+    mat.yr.df <-t(mat.yr.df) # 1 year is 1 column
+    colnames(mat.yr.df) <- seq(0, 100, by=1)   #renames columns to year number
+    data.long <- as.data.frame(mat.yr.df) %>% gather(year, mass, 0:101) 
+    data.long$year <- as.integer(as.character(data.long$year))
+    
+    #gets summary statistics for each year
+    sum.stat <- data.long %>%   
+      group_by(year) %>% 
+      summarize(geo.mean = geometric.mean(mass), P5 = quantile(mass, 0.05,na.rm = TRUE), P95 = quantile(mass, 0.95,na.rm = TRUE))
+    
+    sum.stat.long <- as.data.frame(sum.stat) %>% pivot_longer(c("P95","geo.mean", "P5"), names_to = "sum_stat", values_to = "PEC")
+    # sum.stat.long$Mass <- sum.stat.long$Mass
+    # names(sum.stat.long)[names(sum.stat.long) == "Mass"] <- "PEC"
+    sum.stat.long$scenario = s
+    sum.stat.long$compartment = c
+    
+    #stores values for this cycle (compartment x scenario)
+    sum.stat.long2 <- rbind(sum.stat.long2, sum.stat.long)
+  }
+}
+
+p <- ggplot(subset(sum.stat.long2, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
+  ylab('Concentration (ug/L or mg/kg dw)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(sum.stat.long2, sum_stat %in% "P5")$PEC, 
+                  ymax = subset(sum.stat.long2, sum_stat %in% "P95")$PEC),
+              fill = brewer.pal(7,"Greens")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Greens")[7])
+
+
+p1 <- p + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("PEC_",cases$paneltype[1],"_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+p1 <- p + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw() +scale_y_continuous(trans='log10')+ylab('LOG-Concentration (ug/L or mg/kg dw)') 
+
+ggsave(filename = paste0("PEC_LOG_",cases$paneltype[1],"_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+
+
+
+unique(sum.stat.long2$scenario)
+
+names(sum.stat.long2)
+
+# dataframe with risk limits
+risklimits <- expand.grid(scenario = unique(sum.stat.long2$scenario),
+                     compartment = unique(sum.stat.long2$compartment))
+risklimits$rlim [(risklimits$compartment == "wL" | 
+              risklimits$compartment == "w1R" | 
+              risklimits$compartment == "w1C") & 
+             #grepl("Ag",risklimits$scenario)] <- 0.01 # Landoppervlaktewateren wettelijk JG-MKN (opgelost)
+             grepl("Ag",risklimits$scenario)] <- 0.04 #(µg/L) PNEC for freshwater aquatic organisms from REACH registration dossier
+risklimits$rlim [(risklimits$compartment == "wL" | 
+              risklimits$compartment == "w1R" | 
+              risklimits$compartment == "w1C") & 
+             #grepl("Cu",risklimits$scenario)] <- 2.4  # Landoppervlaktewateren wettelijk JG-MKN (opgelost)
+              grepl("Cu",risklimits$scenario)] <- 7.8 #(µg/L) PNEC for freshwater aquatic organisms from REACH registration dossier
+
+risklimits$rlim [(risklimits$compartment == "wL" | 
+              risklimits$compartment == "w1R" | 
+              risklimits$compartment == "w1C") & 
+              #grepl("Pb",risklimits$scenario)] <- 1.2 # Landoppervlaktewateren wettelijk JG-MKN (opgelost)
+              grepl("Pb",risklimits$scenario)] <- 2.4 #(µg/L) PNEC for freshwater aquatic organisms from REACH registration dossier
+
+risklimits$unit [(risklimits$compartment == "wL" | 
+              risklimits$compartment == "w1R" | 
+              risklimits$compartment == "w1C") ] <- "microgram/liter"
+
+risklimits$rlim [(risklimits$compartment == "sL" | 
+              risklimits$compartment == "s2R" | 
+              risklimits$compartment == "s2C") & 
+             #grepl("Ag",risklimits$scenario)] <- 1e-4 # Grond VR (droge stof)
+              grepl("Ag",risklimits$scenario)] <- 1.41 #(mg/kg soil dw)PNEC for terrestrial organisms from REACH registration dossier
+               
+risklimits$rlim [(risklimits$compartment == "sL" | 
+              risklimits$compartment == "s2R" | 
+              risklimits$compartment == "s2C") & 
+             #grepl("Cu",risklimits$scenario)] <- 54 # Maximale waarde bodemfunctieklasse wonen / Maximale waarden kwaliteitsklasse wonen (droge stof)
+              grepl("Cu",risklimits$scenario)] <- 65 #(mg/kg soil dw)PNEC for terrestrial organisms from REACH registration dossier
+
+risklimits$rlim [(risklimits$compartment == "sL" | 
+              risklimits$compartment == "s2R" | 
+              risklimits$compartment == "s2C") & 
+             #grepl("Pb",risklimits$scenario)] <- 210 # Maximale waarde bodemfunctieklasse wonen / Maximale waarden kwaliteitsklasse wonen (droge stof)
+              grepl("Pb",risklimits$scenario)] <- 212 #(mg/kg soil dw)PNEC for terrestrial organisms from REACH registration dossier
+
+risklimits$unit [(risklimits$compartment == "sL" | 
+              risklimits$compartment == "s2R" | 
+              risklimits$compartment == "s2C") ] <- "mg/kg dw soil"
+
+
+# sum.stat.Pb.Cu.Ag <- sum.stat.long2[(sum.stat.long2$scenario=="Pb_NR_Tandem" |
+#                                   sum.stat.long2$scenario=="Cu_NR_Tandem"|
+#                                  sum.stat.long2$scenario=="Ag_NR_Tandem")&
+#                                 (sum.stat.long2$compartment=="wL"),]
+# 
+# risklimits.Pb.Cu.Ag <- risklimits[(risklimits$scenario=="Pb_NR_Tandem" |
+#                                   risklimits$scenario=="Cu_NR_Tandem"|
+#                                  risklimits$scenario=="Ag_NR_Tandem")&
+#                                 (risklimits$compartment=="wL"),]
+
+sum.stat.Ag.Cu.Pb <- sum.stat.long2[(sum.stat.long2$scenario=="Ag_NR_Tandem" |
+                                  sum.stat.long2$scenario=="Cu_NR_Tandem"|
+                                 sum.stat.long2$scenario=="Pb_NR_Tandem")& 
+                                 (sum.stat.long2$compartment=="wL"|
+                                 sum.stat.long2$compartment=="sL"),]
+
+risklimits.Ag.Cu.Pb <- risklimits[(risklimits$scenario=="Ag_NR_Tandem" |
+                                  risklimits$scenario=="Cu_NR_Tandem"|
+                                 risklimits$scenario=="Pb_NR_Tandem")&
+                                 (risklimits$compartment=="wL"|
+                                 risklimits$compartment=="sL"),]
+
+p <- ggplot(subset(sum.stat.Ag.Cu.Pb, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
+  ylab('Concentration (ug/L or mg/kg dw)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(sum.stat.Ag.Cu.Pb, sum_stat %in% "P5")$PEC, 
+                  ymax = subset(sum.stat.Ag.Cu.Pb, sum_stat %in% "P95")$PEC),
+              fill = brewer.pal(7,"Greens")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Greens")[7])
+
+p1 <- p + geom_hline(data = risklimits.Ag.Cu.Pb, aes(yintercept = rlim))
+
+p2 <- p1 + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("PEC_Ag_Cu_Pb_RLIM_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+#Figure 4  for in Factsheet
+p3 <- p1 + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw() +scale_y_continuous(trans='log10')+ylab('LOG-Concentration (ug/L or mg/kg dw)') 
+
+ggsave(filename = paste0("PEC_Ag_Cu_Pb_RLIM_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+#Plots for both R and NR scenario
+sum.stat.Ag.Cu.Pb_R <- sum.stat.long2
+
+risklimits.Ag.Cu.Pb_R <- risklimits
+
+unique(sum.stat.long2$scenario)
+sum.stat.Pb <- sum.stat.long2[(sum.stat.long2$scenario=="Pb_NR_Tandem" | 
+                                  sum.stat.long2$scenario=="Pb_R_Tandem")&
+                                (sum.stat.long2$compartment=="sL"|sum.stat.long2$compartment=="wL"),]
+
+pR <- ggplot(subset(sum.stat.Ag.Cu.Pb_R, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
+  ylab('Concentration (ug/L or mg/kg dw)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(sum.stat.Ag.Cu.Pb_R, sum_stat %in% "P5")$PEC, 
+                  ymax = subset(sum.stat.Ag.Cu.Pb_R, sum_stat %in% "P95")$PEC),
+              fill = brewer.pal(7,"Greens")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Greens")[7])
+
+p1R <- pR + geom_hline(data = risklimits.Ag.Cu.Pb_R, aes(yintercept = rlim))
+
+p2R <- p1R + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("PEC_Ag_Cu_Pb_RLIM_R_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+
+p3R <- p1R + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw() +scale_y_continuous(trans='log10')+ylab('LOG-Concentration (ug/L or mg/kg dw)') 
+
+ggsave(filename = paste0("PEC_Ag_Cu_Pb_RLIM_R_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+#plots for only Pb
+
+unique(sum.stat.Pb$scenario)
+unique(sum.stat.Pb$compartment)
+
+p <- ggplot(subset(sum.stat.Pb, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
+  ylab('Concentration (ug/L or mg/kg dw)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(sum.stat.Pb, sum_stat %in% "P5")$PEC, 
+                  ymax = subset(sum.stat.Pb, sum_stat %in% "P95")$PEC),
+              fill = brewer.pal(7,"Greens")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Greens")[7])
+
+
+p1 <- p + facet_grid(vars(scenario),vars(compartment), scales = "free")+ theme_bw()
+
+ggsave(filename = paste0("PEC_Pb_",cases$paneltype[1],"_v03.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+
+sum.stat.Pb.NR <- sum.stat.long2[(sum.stat.long2$scenario=="Pb_NR_Tandem"   )&
+                                (sum.stat.long2$compartment=="wL"),]
+
+
+p <- ggplot(subset(sum.stat.Pb.NR, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
+  ylab('Concentration (ug/L)') +
+  xlab('Time (years)')+
+  geom_ribbon(aes(ymin = subset(sum.stat.Pb.NR, sum_stat %in% "P25")$PEC, 
+                  ymax = subset(sum.stat.Pb.NR, sum_stat %in% "P75")$PEC),
+              fill = brewer.pal(7,"Greens")[2])+
+  geom_line(position = "identity", alpha = 1, colour=brewer.pal(7,"Greens")[7])
+
+
+p1 <- p + theme_bw()
+
+ggsave(filename = paste0("PEC_Pb_NR",cases$paneltype[1],"_v01.jpg"),
+       plot = p1,
+       device = "jpeg",
+       path = "figures",
+       scale = 1,
+       width = 10,
+       height = 5.5,
+       units = "cm",
+       dpi = 300)
+
+
+ggsave(filename = paste0("PEC_Pb_NR",cases$paneltype[1],"_v01.pdf"),
+       plot = p1,
+       device = "pdf",
+       path = "figures",
+       scale = 1,
+       width = 10,
+       height = 5.5,
+       units = "cm",
+       dpi = 300)
+
+
+
+ggsave(filename = paste0("PEC_Pb_NR",cases$paneltype[1],"_v01.svg"),
+       plot = p1,
+       device = "svg",
+       path = "figures",
+       scale = 1,
+       width = 10,
+       height = 5.5,
+       units = "cm",
+       dpi = 300)
+
+```
+
+
+```{r Figure 5-6. PEC/PNEC ratios} 
+
+library(ggplot2)
+library(deSolve)
+library(tidyr)
+library(dplyr)
+library(psych)
+library(remotes)
+library(ggh4x)
+
+rq <- data.frame(scenario = character(36000), compartment = character(36000), mass=numeric(36000), run=integer(36000), volume=numeric(36000), PNEC=numeric(36000), PEC=numeric(36000), RQ=numeric(36000), chemical = character(36000))
+
+#Get compartment volumes from @RISK input data
+# v_wL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.wL`[4:1003])
+# v_w1R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.w1R`[4:1003])
+# v_w1C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.w1C`[4:1003])
+# v_sL <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.sL`[4:1003])
+# v_s2R <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.s2R`[4:1003])
+# v_s2C <- as.double(out.data2$`Ag_NR_Tandem`$addriskinput$`v./.s2C`[4:1003])
+# vols <- data.frame(v_wL, v_w1R, v_w1C,v_sL, v_s2R, v_s2C)
+
+t = 0
+u = 0
+
+#Unpacks the deSolve lists into a df ready for ggplot
+# s="Cu_NR_Tandem"
+# c= "wL"
+# r=2
+for(s in scen){
+  for(c in comp){
+    cv <- vols %>% select(matches(c))
+    for(r in 1:1000){
+      #if (r != 4){   #must skip 4 due to error in run 4 of dynamic analysis
+        try(rq$mass[r+t+u] <- out.data2[[s]][[r]][["SBout_kg"]][[max(grep(TRUE,!is.na(out.data2[[s]][[r]][["SBout_kg"]][,c]))),c]])
+        rq$scenario[r+t+u] <- s
+        rq$compartment[r+t+u] <- c
+        rq$run[r+t+u] <- r
+        rq$volume[r+t+u] <- cv[r,1]
+        
+        
+        #converts concentrations to ug/L for water and g/kg for soil compartments
+        if (c %in% c("wL", "w1R", "w1C")){
+          try(rq$PEC[r+t+u] <- (rq$mass[r+t+u]/cv[r,1])*1e9/1000   ) #divides mass by compartment volume in m3
+        } else {
+          fracw <- FRACWs %>% select(matches(c))
+          # fraca <- FRACAs %>% select(matches(c))
+          try(rq$PEC[r+t+u] <- (f_Soil.dryweight(Conc.soil = c(rq$mass[r+t+u]/cv[r,1]), 
+                                                 Fracs = c(1-fracw[r,1]-0.2), 
+                                                 RHOsolid = RHOSOLID[r] ) ) )
+          
+        }
+        
+        # rq$PEC[r+t+u] <- rq$mass[r+t+u]/cv[r,1]
+        
+        rq$chemical[r+t+u] <- substring(rq$scenario[r+t+u],0,2)
+      #}
+    }
+    t = t+1000
+  }
+  u = u + 6000
+  t=0
+}
+
+#recalculates pec, adds pnec and then calculates rq for water compartments
+rq_w <- subset(rq, compartment == "wL" | compartment == "w1R" | compartment == "w1C")
+rq_w$PNEC[rq_w$chemical=="Ag"] = 0.01 #JG-MKN zoet oppervlaktewater in microgram/L
+rq_w$PNEC[rq_w$chemical=="Cu"] = 2.4 #JG-MKN zoet oppervlaktewater in microgram/L
+rq_w$PNEC[rq_w$chemical=="Pb"] = 1.2 #JG-MKN zoet oppervlaktewater in microgram/L
+rq_w$unit ="microgram/liter"
+# rq_w$PEC = rq_w$PEC*1e6 #conversion of PEC water from kg/m3 to microgram/L
+rq_w$RQ = rq_w$PEC/rq_w$PNEC
+
+#recalculates pec, adds pnec and then calculates rq for soil compartments
+rq_s <- subset(rq, compartment == "sL" | compartment == "s2R" | compartment == "s2C")
+rq_s$PNEC[rq_s$chemical=="Ag"] = 1e-7 #soil negligible risk threshold (Grond VR) #1.41e-3 PNEC terrestrial organisms ECHA registration dossier
+rq_s$PNEC[rq_s$chemical=="Cu"] = 65e-3 #PNEC terrestrial organisms ECHA registration dossier
+rq_s$PNEC[rq_s$chemical=="Pb"] = 212e-3 #PNEC terrestrial organisms ECHA registration dossier
+rq_s$unit = "mg/kg dw soil"
+# rq_s$PEC = rq_s$PEC*1000/(0.6*2500) #conversion of PEC soil to mg/kg dry weight
+rq_s$RQ = rq_s$PEC/rq_s$PNEC
+
+#recombines water and soil in one df
+rq_t <- rbind(rq_w,rq_s)
+rq_t$rec <- substring(rq_t$scenario,4,4)
+
+#plot with facet - haven't been able to let the scales vary freely while disregarding outliers so scales fixed manually
+p <- ggplot(rq_t, aes(x=compartment, y=RQ, color=rec)) +
+  geom_boxplot(outlier.shape = NA) +
+  facet_wrap(vars(chemical), scales = "free_y")
+
+p +
+  facetted_pos_scales(
+    y = list(
+      chemical == "Ag" ~ scale_y_log10(), #ylim(0,100),
+      chemical == "Cu" ~ scale_y_log10(), #ylim(0,5),
+      chemical == "Pb" ~ scale_y_log10() #ylim(0,0.05)
+    )
+  )
+
+ggsave(filename = paste0("RQ_",cases$paneltype[1],"_v01.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+p <- ggplot(rq_t, aes(x=compartment, y=RQ, color=rec)) +
+  geom_boxplot() +
+  facet_wrap(vars(chemical), scales = "free_y")
+
+p +
+  facetted_pos_scales(
+    y = list(
+      chemical == "Ag" ~ scale_y_log10(), #ylim(0,100),
+      chemical == "Cu" ~ scale_y_log10(), #ylim(0,5),
+      chemical == "Pb" ~ scale_y_log10() #ylim(0,0.05)
+    )
+  )
+
+ggsave(filename = paste0("RQ_",cases$paneltype[1],"_v01.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 16,
+       height = 10,
+       units = "cm",
+       dpi = 300)
+
+```
+
+
+```{r figure 7 sensitivity}
+library(sensitivity)
+library(readxl)
+library(ggplot2)
+library(ks) ### ks needed for sensiFdiv function
+# library(readxl)
+
+
+#store rows with errors to remove from X and Y
+bad_rows <- unique(which(is.na(mat.yr),arr.ind = TRUE)[,2])
+
+#Build X matrix from emissions model + dynamicSB model uncertain params
+X_emi <- read_excel("data/Emis PV data tandem perovskite/PV_emissions_Tandem_v0.1_LOC_NR_Ag_kg.xlsm",sheet = "PROB_X")[,-1]
+X_sb <- out.data2$`Ag_NR_Tandem`$addriskinput[-c(1:3),]
+probX <- cbind(X_emi, X_sb)
+
+
+# aim to calculate Cummulative stock instead of PEC/RQ for sensitivity analysis
+
+#Build Y vector from output
+probY <- data.frame(RQ = rq_t$RQ[rq_t$scenario == "Ag_NR_Tandem" & rq_t$compartment == "wL"])
+
+
+probY[probY<=0] <- 1e-20 ##negative risks?
+#probY <- probY[-bad_rows,] #Commented as bad rows are already removed in rq df bt which probY is defined
+
+#logtransform data to avoid error
+probX = log(data.matrix(probX)+100)
+probY = log(data.matrix(probY))
+
+#remove constant columns to avoid error
+probX1 <- probX[,apply(probX, 2, var, na.rm=TRUE) != 0]
+length(probY)
+length(probX1[,1])
+#run global sensitivity analysis
+m <- sensiFdiv(model = NULL, X=probX1, fdiv = "TV", nboot = 0, conf = 0.95, scale = TRUE)
+tell(m, y=probY, S)
+ggplot(m, ylim = c(0, 1))
+
+#prepare output for ggplot
+borg_d <- data.frame(colnames(probX1),m$S$original)
+names(borg_d)<-c("Factor", "delta")
+borg_d$Scenario<-c("Ag_NR_Tandem")
+borg_d$Compartment<-c("wL")
+
+#heatmap
+ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) + 
+  geom_tile()+
+  theme(axis.text.y = element_text(size = 6))
+
+```
+
+

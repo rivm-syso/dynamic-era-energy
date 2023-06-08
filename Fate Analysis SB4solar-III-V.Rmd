@@ -108,7 +108,7 @@ SB.names <- read.xlsx(sb4n.loc,colNames=FALSE, namedRegion ="box_names") #Names 
 SB.m0 <- rep(0,length(SB.names)) # Initial mass of each compartment in kg
 
 # Read in and prepare emission data per compartment and scale
-Analysis_name <- "v1.7b"
+Analysis_name <- "v1.8b"
 # Scenario_name <- "III-V_Si_As_NoR"
 
 detectCores()
@@ -125,9 +125,9 @@ out.data2 <- as.list(NULL)
 for(i in 1:length(cases[,1])){
   # foreach::foreach()
   
-  Emis.Loc <- paste0("data/Emis PV data III-V/PV_emissions_v1.7_LOC_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm")
-  Emis.Reg <- paste0("data/Emis PV data III-V/PV_emissions_v1.7_AM_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
-  Emis.Cont <-paste0("data/Emis PV data III-V/PV_emissions_v1.7_EU_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
+  Emis.Loc <- paste0("data/Emis PV data III-V/PV_emissions_v1.8_LOC_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm")
+  Emis.Reg <- paste0("data/Emis PV data III-V/PV_emissions_v1.8_AM_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
+  Emis.Cont <-paste0("data/Emis PV data III-V/PV_emissions_v1.8_EU_",cases$Recycling[i],"_",cases$substance[i],"_kg.xlsm") 
   
   prep.emis.v1 <- function(emis.data){ # input is format of xls emission data
     emis.data[,1] <- paste0(emis.data[,1], Analysis_name)
@@ -139,17 +139,17 @@ for(i in 1:length(cases[,1])){
   }
   
   # emission rate is read in and organised
-  Emis_a_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_a")) 
-  Emis_fw_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_tw"))
-  Emis_s_L <- prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_s")) 
+  Emis_a_L <- head(prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_a")),1000) 
+  Emis_fw_L <- head(prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_tw")), 1000)
+  Emis_s_L <- head(prep.emis.v1(read.xlsx(Emis.Loc,colNames=TRUE,sheet = "PROB_Y_s")), 1000) 
   
-  Emis_a_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_a")) 
-  Emis_fw_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_tw"))
-  Emis_s_R <- prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_s")) 
+  Emis_a_R <- head(prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_a")), 1000) 
+  Emis_fw_R <- head(prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_tw")), 1000)
+  Emis_s_R <- head(prep.emis.v1(read.xlsx(Emis.Reg,colNames=TRUE,sheet = "PROB_Y_s")), 1000) 
   
-  Emis_a_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_a"))
-  Emis_fw_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_tw"))
-  Emis_s_C <- prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_s"))
+  Emis_a_C <- head(prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_a")), 1000)
+  Emis_fw_C <- head(prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_tw")), 1000)
+  Emis_s_C <- head(prep.emis.v1(read.xlsx(Emis.Cont,colNames=TRUE,sheet = "PROB_Y_s")), 1000)
   
   # Function for converting emission data to linear interpolation functions for Solver
   f.emisfun <- function(Y){

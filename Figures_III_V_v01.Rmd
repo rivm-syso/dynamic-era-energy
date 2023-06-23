@@ -281,7 +281,6 @@ for(c in comp){
 
 ##Plot
 
-pdf("PEC.pdf")
 p <- ggplot(subset(sum.stat.long2, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)) +
   ylab('Concentration (ug/L or mg/kg dw)') +
   xlab('Time (years)')+
@@ -302,7 +301,6 @@ ggsave(filename = paste0("PEC_",cases$paneltype[1],"_v1.jpg"),
        units = "cm",
        dpi = 300)
 
-dev.off()
 
 ```
 
@@ -394,7 +392,6 @@ rq_t$rec <- substring(rq_t$scenario,4,4)
 
 #plot with facet - haven't been able to let the scales vary freely while disregarding outliers so scales fixed manually
 
-pdf(paste0('RQ.pdf'), width = 12, height = 6)
 
 p <- ggplot(rq_t, aes(x=compartment, y=RQ, color=rec)) +
   geom_boxplot(outlier.shape = NA) +
@@ -417,12 +414,11 @@ ggsave(filename = paste0("RQ_",cases$paneltype[1],"_v01.jpg"),
        device = "jpeg",
        path = "figures",
        scale = 2,
-       width = 16,
-       height = 10,
+       width = 12,
+       height = 6,
        units = "cm",
        dpi = 300)
 
-dev.off()
 
 ```
 
@@ -488,25 +484,42 @@ load("data/borg_d.RData")
 # export to excel the old order and names of the sensitivity factors
 borg_d$Factor <- factor(borg_d$Factor, levels = unique(borg_d$Factor))
 old.lvl<-levels(borg_d$Factor)
-write.xlsx(data.frame(old.lvl), file = "Names_borg_d.xlsx", sheetName="oldlvl")
 
-# introduce in a new sheet named "newlvl" the preferred order and names for the sensitivity factors
+wb <- createWorkbook()
+addWorksheet(wb, "oldlvl")
+writeData(wb, sheet = 1, data.frame(old.lvl))
+addWorksheet(wb, "newlvl")
+new.lvl <- data.frame(matrix(ncol = 2, nrow = 0))
+colnames(new.lvl) <- c("Variable","Name")
+writeData(wb, sheet= 2, new.lvl)
+saveWorkbook(wb, "Names_borg_d.xlsx")
+
+# !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
+
 new.lvl <- read_excel("Names_borg_d.xlsx",sheet="newlvl")
 
 borg_d$Factor <- factor(borg_d$Factor, levels = rev(new.lvl$Variable))
 
-pdf(paste0('GSA_tot_20230505.pdf'), width=8,height=11)
 p <- ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) + 
   geom_tile(stat="identity")+
   scale_fill_viridis_c(alpha = 0.5, option = "A", direction = -1)+
   theme_light()+
   theme(axis.text.y = element_text(size = 6),
-        plot.background = element_blank(),
+        # plot.background = element_blank(),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank())
 p + geom_tile(borg_d, mapping = aes(x=Compartment, y=Factor), fill="transparent", colour="white", size=1)+ facet_grid(vars(),vars(Scenario), scales = "free") + scale_y_discrete(labels=rev(new.lvl$Name))
-dev.off()
+
+ggsave(filename = paste0("GSA_v01.jpg"),
+       plot = last_plot(),
+       device = "jpeg",
+       path = "figures",
+       scale = 2,
+       width = 8,
+       height = 11,
+       units = "cm",
+       dpi = 300)
 
 ```
 

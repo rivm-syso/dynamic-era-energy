@@ -112,7 +112,7 @@ Analysis_name <- "v1.8b"
 # Scenario_name <- "III-V_Si_As_NoR"
 
 detectCores()
-ncores <- 4 #take care not to set to more than amount of cores available.
+ncores <- 10 #take care not to set to more than amount of cores available.
 
 # read in emission data
 
@@ -176,7 +176,7 @@ for(i in 1:length(cases[,1])){
                     Emis_s_C=Emis_s_C)
   Emisfunctions <- lapply(Emisdata,f.emisfun) # converts elements in list to emission functions
   
-  ADDRISKdata <- paste0("data/SBMatrix III-V/",cases$substance[i],"_SB4DIRECT @RISK output to K-matrix_25102021.xlsx")
+  ADDRISKdata <- paste0("data/SBMatrix III-V/",cases$substance[i],"_SB4DIRECT @RISK output to K-matrix_21062022.xlsx")
   
   ###
   f.emisfun <- function(Y){

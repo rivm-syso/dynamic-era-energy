@@ -411,6 +411,8 @@ ggsave(filename = paste0("RQ_",cases$paneltype[1],"_v01.jpg"),
 
 ```
 
+Below first the sensitivity analysis is conducted based on the input and output data. Followed by making a figure to show the results.
+
 ```{r sensitivity}
 
 library(sensitivity)

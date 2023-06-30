@@ -89,6 +89,10 @@ f_wet2dryweight <- function(Conc.soil, # in g/kg (wet) soil/sediment
   Conc.soil*(Fracw*RHOw/(Fracs*RHOsolid)+1) # in g/kg (dry) soil
 }
 
+# check and of not available create figures output folder
+if (file.exists("figures")){ print("output folder figures exists") } else {
+  dir.create("figures")
+}
 
 ```
 

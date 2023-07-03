@@ -469,20 +469,22 @@ load("data/borg_d.RData")
   
 #heatmap
 
-# export to excel the old order and names of the sensitivity factors
 borg_d$Factor <- factor(borg_d$Factor, levels = unique(borg_d$Factor))
-old.lvl<-levels(borg_d$Factor)
 
-wb <- createWorkbook()
-addWorksheet(wb, "oldlvl")
-writeData(wb, sheet = 1, data.frame(old.lvl))
-addWorksheet(wb, "newlvl")
-new.lvl <- data.frame(matrix(ncol = 2, nrow = 0))
-colnames(new.lvl) <- c("Variable","Name")
-writeData(wb, sheet= 2, new.lvl)
-saveWorkbook(wb, "Names_borg_d.xlsx")
-
+###Export to excel and change variable order and names
 # !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
+
+# wb <- createWorkbook()
+# addWorksheet(wb, "oldlvl")
+# old.lvl<-levels(borg_d$Factor)
+# writeData(wb, sheet = 1, data.frame(old.lvl))
+# addWorksheet(wb, "newlvl")
+# new.lvl <- data.frame(matrix(ncol = 2, nrow = 0))
+# colnames(new.lvl) <- c("Variable","Name")
+# writeData(wb, sheet= 2, new.lvl)
+# saveWorkbook(wb, "Names_borg_d.xlsx")
+
+# Import new order and names of variables
 
 new.lvl <- read_excel("Names_borg_d.xlsx",sheet="newlvl")
 

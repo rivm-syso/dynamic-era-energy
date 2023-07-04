@@ -473,8 +473,22 @@ load("data/borg_d.RData")
 
 borg_d$Factor <- factor(borg_d$Factor, levels = unique(borg_d$Factor))
 
-###Export to excel and change variable order and names
-# !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
+unique(borg_d$Factor)
+
+p <- ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) + 
+  geom_tile(stat="identity")+
+  scale_fill_viridis_c(alpha = 0.5, option = "A", direction = -1)+
+  theme_light()+
+  theme(axis.text.y = element_text(size = 6),
+        # plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+
+p + geom_tile(borg_d, mapping = aes(x=Compartment, y=Factor), fill="transparent", colour="white", size=1)+ facet_grid(vars(),vars(Scenario), scales = "free")
+
+#  To get a better formatted figure it is required to export to excel and change variable order and names
+#  !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
 
 # wb <- createWorkbook()
 # addWorksheet(wb, "oldlvl")
@@ -487,8 +501,7 @@ borg_d$Factor <- factor(borg_d$Factor, levels = unique(borg_d$Factor))
 # saveWorkbook(wb, "Names_borg_d.xlsx")
 
 # Import new order and names of variables
-
-new.lvl <- read_excel("Names_borg_d.xlsx",sheet="newlvl")
+new.lvl <- read.xlsx("Names_borg_d.xlsx",sheet="newlvl")
 
 borg_d$Factor <- factor(borg_d$Factor, levels = rev(new.lvl$Variable))
 
@@ -501,6 +514,7 @@ p <- ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) +
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank())
+
 p + geom_tile(borg_d, mapping = aes(x=Compartment, y=Factor), fill="transparent", colour="white", size=1)+ facet_grid(vars(),vars(Scenario), scales = "free") + scale_y_discrete(labels=rev(new.lvl$Name))
 
 ggsave(filename = paste0("GSA_v01.jpg"),

@@ -225,9 +225,7 @@ for(c in comp){
     cv <- vols %>% select(matches(c))
     mat.yr <- matrix(nrow=101, ncol=1000)
     
-    #new code to fill matrix, as previous one would not report on errors with DeSolve output... and skipped columns wihout valid data without warning, e.g. run 4 here.
     for(r in 1:1000) {
-      
       
       #converts concentrations to ug/L for water and g/kg for soil compartments
       if (c %in% c("wL", "w1R", "w1C")){
@@ -242,13 +240,15 @@ for(c in comp){
       }
       
     }
-    
-#    if(unique(is.na(mat.yr[is.na((mat.yr))]))){print("NA's found, please #check, a Desolve SB run could have failed or a timestep failed")
-#      which(is.na(mat.yr),arr.ind = TRUE)
-#    }
+    if(length(which(is.na(mat.yr),arr.ind = TRUE)[,2])>0){print("NA's found, please check, a Desolve SB run could have failed or a timestep failed")
+      # which(is.na(mat.yr))
+      which(is.na(mat.yr),arr.ind = TRUE)
+      print(paste0("NA's found in Runs: " ))
+      print(unique(which(is.na(mat.yr),arr.ind = TRUE)[,2]))
+      }
     
     mat.yr.df <- as.data.frame(mat.yr) 
-    mat.yr.df <- mat.yr.df[-1]
+    # mat.yr.df <- mat.yr.df[-1]
     
     ## Reshapes dataframe and puts it in long form
     mat.yr.df <-t(mat.yr.df) # 1 year is 1 column
@@ -267,12 +267,6 @@ for(c in comp){
     sum.stat.long$scenario = s
     sum.stat.long$compartment = c
     
-    # #converts concentrations to ug/L for water and g/kg for soil compartments
-    # if (c %in% c("wL", "w1R", "w1C")){
-    #   sum.stat.long$PEC <- sum.stat.long$PEC*1e9/1000
-    # } else {
-    #   sum.stat.long$PEC  <- f_Soil.dryweight(sum.stat.long$PEC,0.6,2500) # FracS is probabilistic and RHOsolid as well
-    # }
     
     #stores values for this cycle (compartment x scenario)
     sum.stat.long2 <- rbind(sum.stat.long2, sum.stat.long)
@@ -291,7 +285,7 @@ p <- ggplot(subset(sum.stat.long2, sum_stat %in% "geo.mean"), aes(x=year, y=PEC)
 
 p1 <- p + facet_grid(vars(compartment),vars(scenario), scales = "free")+ theme_bw()
 
-ggsave(filename = paste0("PEC_",cases$paneltype[1],"_v1.jpg"),
+ggsave(filename = paste0("PEC_",cases$paneltype[1],"_v02.jpg"),
        plot = last_plot(),
        device = "jpeg",
        path = "figures",
@@ -330,14 +324,10 @@ t = 0
 u = 0
 
 #Unpacks the deSolve lists into a df ready for ggplot
-# s="Cu_NR_Tandem"
-# c= "wL"
-# r=2
 for(s in scen){
   for(c in comp){
     cv <- vols %>% select(matches(c))
     for(r in 1:1000){
-      if (r != 4){   #must skip 4 due to error in run 4 of dynamic analysis
         try(rq$mass[r+t+u] <- out.data2[[s]][[r]][["SBout_kg"]][[max(grep(TRUE,!is.na(out.data2[[s]][[r]][["SBout_kg"]][,c]))),c]])
         rq$scenario[r+t+u] <- s
         rq$compartment[r+t+u] <- c
@@ -360,7 +350,6 @@ for(s in scen){
         # rq$PEC[r+t+u] <- rq$mass[r+t+u]/cv[r,1]
         
         rq$chemical[r+t+u] <- substring(rq$scenario[r+t+u],0,2)
-      }
     }
     t = t+1000
   }
@@ -422,6 +411,8 @@ ggsave(filename = paste0("RQ_",cases$paneltype[1],"_v01.jpg"),
 
 ```
 
+Below first the sensitivity analysis is conducted based on the input and output data. Followed by making a figure to show the results.
+
 ```{r sensitivity}
 
 library(sensitivity)
@@ -430,7 +421,7 @@ library(ggplot2)
 library(ks) ### ks needed for sensiFdiv function
 borg_d <- data.frame()
 substances <- c("As","Ga","In")   ### define substances for which to make the analysis
-option <- c("NR","R")  ### define scenarios for which to make the analysis
+option <- c("NR","R") ### define scenarios for which to make the analysis
 for (s in substances){
   for (o in option){
     for (c in comp){
@@ -446,21 +437,20 @@ for (s in substances){
       X_sb <- out.data2[[paste0(s,"_",o,"_III-V")]][["addriskinput"]][-c(1:3),]
       rownames(X_sb) <- NULL # Resetting index numbers of rows
       probX <- cbind(X_emi, X_sb)
-      probX <- probX[-4,]
-      #probX <- probX[-bad_rows,]  #remove rows with errors
       #Build Y vector from output
       probY <- data.frame(RQ = rq_t$RQ[rq_t$scenario == paste0(s,"_",o,"_III-V") & rq_t$compartment == c])
       probY[probY==0] <- 1e-20
       #probY <- probY[-bad_rows,]        
       #logtransform data to avoid error
-      probX = log(data.matrix(probX)+100) 
+      probX = log(data.matrix(probX)+100)
       probY = log(data.matrix(probY))
-      #remove constant columns to avoid error
-      probX1 <- probX[,apply(probX, 2, var, na.rm=TRUE) != 0]  
-      probX2 <- subset(probX1, select = !(colnames(probX1) %in% c("Kpsoil.silver","Kpsoil.As","Kpsoil.copper","Kpsoil.Ga","Kpsoil.In","Kpsoil.lead","Koc.DHPS","v./.aL","v./.wL","v./.sdL","v./.aR","v./.w1R","v./.sd1R","v./.aC","v./.w1C","v./.sd1C","v./.sd2C","v./.w0C", "v./.w2C", "v./.s1C", "v./.s2C", "v./.s3C", "v./.aM", "v./.w2M","v./.w3M","v./.sdM", "v./.sM")))
+      #remove constant columns
+      probX1 <- probX[,apply(probX, 2, var, na.rm=TRUE)!= 0] 
+      #remove dependent variables
+      probX2 <- subset(probX1, select = !(colnames(probX1) %in% c("Kpsoil.silver","Kpsoil.As","Kpsoil.copper","Kpsoil.Ga","Kpsoil.In","Kpsoil.lead","to.sT.(s-1)./.from.sT","v./.aL","v./.wL","v./.sdL","v./.aR","v./.w1R","v./.sd1R","v./.aC","v./.w1C","v./.sd1C","v./.sd2C","v./.w0C", "v./.w2C", "v./.s1C", "v./.s2C", "v./.s3C", "v./.aM", "v./.w2M","v./.w3M","v./.sdM", "v./.sM")))
       #run global sensitivity analysis
       m <- sensiFdiv(model = NULL, X=probX2, fdiv = "TV", nboot = 0, conf = 0.95,   scale = TRUE)
-      tell(m, y=probY, S)
+      tell(m, y=probY,S)
       ggplot(m, ylim = c(0, 1))
       #prepare output for ggplot
       borg_d_temp <- data.frame(colnames(probX2),m$S$original)
@@ -481,22 +471,37 @@ load("data/borg_d.RData")
   
 #heatmap
 
-# export to excel the old order and names of the sensitivity factors
 borg_d$Factor <- factor(borg_d$Factor, levels = unique(borg_d$Factor))
-old.lvl<-levels(borg_d$Factor)
 
-wb <- createWorkbook()
-addWorksheet(wb, "oldlvl")
-writeData(wb, sheet = 1, data.frame(old.lvl))
-addWorksheet(wb, "newlvl")
-new.lvl <- data.frame(matrix(ncol = 2, nrow = 0))
-colnames(new.lvl) <- c("Variable","Name")
-writeData(wb, sheet= 2, new.lvl)
-saveWorkbook(wb, "Names_borg_d.xlsx")
+unique(borg_d$Factor)
 
-# !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
+p <- ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) + 
+  geom_tile(stat="identity")+
+  scale_fill_viridis_c(alpha = 0.5, option = "A", direction = -1)+
+  theme_light()+
+  theme(axis.text.y = element_text(size = 6),
+        # plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
 
-new.lvl <- read_excel("Names_borg_d.xlsx",sheet="newlvl")
+p + geom_tile(borg_d, mapping = aes(x=Compartment, y=Factor), fill="transparent", colour="white", size=1)+ facet_grid(vars(),vars(Scenario), scales = "free")
+
+#  To get a better formatted figure it is required to export to excel and change variable order and names
+#  !!! introduce in the new sheet named "newlvl" the preferred order and names for the sensitivity factors
+
+# wb <- createWorkbook()
+# addWorksheet(wb, "oldlvl")
+# old.lvl<-levels(borg_d$Factor)
+# writeData(wb, sheet = 1, data.frame(old.lvl))
+# addWorksheet(wb, "newlvl")
+# new.lvl <- data.frame(matrix(ncol = 2, nrow = 0))
+# colnames(new.lvl) <- c("Variable","Name")
+# writeData(wb, sheet= 2, new.lvl)
+# saveWorkbook(wb, "Names_borg_d.xlsx")
+
+# Import new order and names of variables
+new.lvl <- read.xlsx("Names_borg_d.xlsx",sheet="newlvl")
 
 borg_d$Factor <- factor(borg_d$Factor, levels = rev(new.lvl$Variable))
 
@@ -509,6 +514,7 @@ p <- ggplot(borg_d, aes(x=Compartment, y=Factor, fill= delta)) +
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank())
+
 p + geom_tile(borg_d, mapping = aes(x=Compartment, y=Factor), fill="transparent", colour="white", size=1)+ facet_grid(vars(),vars(Scenario), scales = "free") + scale_y_discrete(labels=rev(new.lvl$Name))
 
 ggsave(filename = paste0("GSA_v01.jpg"),
